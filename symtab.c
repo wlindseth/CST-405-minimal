@@ -1,161 +1,208 @@
-/* SYMBOL TABLE IMPLEMENTATION (Hierarchical)
- * Manages a stack of scopes to support function-level scoping.
+/* SYMBOL TABLE IMPLEMENTATION
+ * Manages variable declarations and lookups
+ * Essential for semantic analysis (checking if variables are declared)
+ * Provides memory layout information for code generation
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "symtab.h"
 
-/* Global symbol table instance */
 SymbolTable symtab;
 
-/* Initialize the symbol table with a global scope */
 void initSymTab() {
-    // Create the global scope
-    symtab.globalScope = (Scope*) malloc(sizeof(Scope));
+    // Create global scope
+    symtab.globalScope = malloc(sizeof(Scope));
     symtab.globalScope->count = 0;
     symtab.globalScope->nextOffset = 0;
-    symtab.globalScope->parent = NULL; // Global scope has no parent
-
-    // The current scope starts as the global scope
+    symtab.globalScope->paramOffset = 8;
+    symtab.globalScope->parent = NULL;
     symtab.currentScope = symtab.globalScope;
 }
 
-/* Enter a new scope (e.g., when entering a function body) */
 void enterScope() {
-    Scope* newScope = (Scope*) malloc(sizeof(Scope));
+    Scope* newScope = malloc(sizeof(Scope));
     newScope->count = 0;
-    newScope->nextOffset = 0; // Each function scope has its own offset count
-    newScope->parent = symtab.currentScope; // Link to the parent scope
-    symtab.currentScope = newScope; // The new scope is now the current one
+    newScope->nextOffset = -4;  // Local variables have negative offsets
+    newScope->paramOffset = 8;   // Parameters have positive offsets
+    newScope->parent = symtab.currentScope;
+    symtab.currentScope = newScope;
 }
 
-/* Exit the current scope (e.g., when leaving a function body) */
 void exitScope() {
-    // Cannot exit the global scope
-    if (symtab.currentScope == symtab.globalScope) {
-        return;
+    if (symtab.currentScope != symtab.globalScope) {
+        Scope* oldScope = symtab.currentScope;
+        symtab.currentScope = symtab.currentScope->parent;
+        free(oldScope);
     }
-
-    Scope* parentScope = symtab.currentScope->parent;
-    
-    // Free memory for names/types in the exiting scope
-    for (int i = 0; i < symtab.currentScope->count; i++) {
-        free(symtab.currentScope->symbols[i].name);
-        free(symtab.currentScope->symbols[i].type);
-        // Note: paramTypes are not freed here as they are managed by the parser
-    }
-    
-    free(symtab.currentScope); // Free the scope structure itself
-    symtab.currentScope = parentScope; // Move up to the parent scope
 }
 
-/* Look up a symbol by searching from the current scope outwards */
 Symbol* lookupSymbol(char* name) {
     Scope* scope = symtab.currentScope;
-
-    // Search from current scope up to global
+    
     while (scope != NULL) {
         for (int i = 0; i < scope->count; i++) {
-            if (strcmp(scope->symbols[i].name, name) == 0) {
-                return &scope->symbols[i];  // Found it
+            if (strcmp(scope->vars[i].name, name) == 0) {
+                return &scope->vars[i];
             }
         }
-        scope = scope->parent;  // Try parent scope
+        scope = scope->parent;
     }
-    return NULL;  // Not found in any scope
+    return NULL;
 }
 
-/* Check if a symbol exists ONLY in the current scope (for detecting re-declarations) */
 int isInCurrentScope(char* name) {
     for (int i = 0; i < symtab.currentScope->count; i++) {
-        if (strcmp(symtab.currentScope->symbols[i].name, name) == 0) {
-            return 1; // Found
+        if (strcmp(symtab.currentScope->vars[i].name, name) == 0) {
+            return 1;
         }
     }
-    return 0; // Not found
+    return 0;
 }
 
-/* Add a local variable to the current scope */
-int addVar(char* name, char* type) {
+int addVar(char* name) {
     if (isInCurrentScope(name)) {
-        fprintf(stderr, "Semantic Error: Redeclaration of variable '%s'\n", name);
-        return -1; // Error: already declared in this scope
-    }
-    if (symtab.currentScope->count >= MAX_SYMBOLS_PER_SCOPE) {
-        fprintf(stderr, "Error: Symbol table full in current scope.\n");
         return -1;
     }
-
-    Symbol* newSymbol = &symtab.currentScope->symbols[symtab.currentScope->count];
-    newSymbol->name = strdup(name);
-    newSymbol->type = strdup(type);
-    newSymbol->offset = symtab.currentScope->nextOffset;
-    newSymbol->isFunction = 0;
-    newSymbol->paramCount = 0;
-    newSymbol->paramTypes = NULL;
     
-    symtab.currentScope->nextOffset += 4; // Assuming 4-byte integers
+    Symbol* sym = &symtab.currentScope->vars[symtab.currentScope->count];
+    sym->name = strdup(name);
+    sym->isFunction = 0;
+    sym->isParameter = 0;
+    sym->isArray = 0;
+    sym->is2DArray = 0;
+    sym->offset = symtab.currentScope->nextOffset;
+    
+    symtab.currentScope->nextOffset -= 4;  // Locals grow downward
     symtab.currentScope->count++;
     
-    return newSymbol->offset;
+    return sym->offset;
 }
 
-/* Add a function parameter to the current scope */
+int addFunction(char* name, char* returnType, int paramCount) {
+    if (isInCurrentScope(name)) {
+        return -1;
+    }
+    
+    Symbol* sym = &symtab.currentScope->vars[symtab.currentScope->count];
+    sym->name = strdup(name);
+    sym->returnType = strdup(returnType);
+    sym->isFunction = 1;
+    sym->isParameter = 0;
+    sym->paramCount = paramCount;
+    sym->offset = 0;
+    sym->isArray = 0;
+    sym->is2DArray = 0;
+    
+    symtab.currentScope->count++;
+    return 0;
+}
+
 int addParameter(char* name, char* type) {
-    // Adding a parameter is the same as adding a local variable
-    return addVar(name, type);
-}
-
-/* Add a function declaration to the current scope (should be global) */
-int addFunction(char* name, char* returnType, char** paramTypes, int paramCount) {
     if (isInCurrentScope(name)) {
-        fprintf(stderr, "Semantic Error: Redeclaration of function '%s'\n", name);
         return -1;
     }
-    if (symtab.currentScope->count >= MAX_SYMBOLS_PER_SCOPE) {
-        fprintf(stderr, "Error: Symbol table full in current scope.\n");
-        return -1;
-    }
-
-    Symbol* newSymbol = &symtab.currentScope->symbols[symtab.currentScope->count];
-    newSymbol->name = strdup(name);
-    newSymbol->type = strdup(returnType); // 'type' holds the return type
-    newSymbol->offset = -1; // Functions don't have a stack offset
-    newSymbol->isFunction = 1;
-    newSymbol->paramCount = paramCount;
-    newSymbol->paramTypes = paramTypes;
-
+    
+    Symbol* sym = &symtab.currentScope->vars[symtab.currentScope->count];
+    sym->name = strdup(name);
+    sym->returnType = strdup(type);
+    sym->isParameter = 1;
+    sym->isFunction = 0;
+    sym->isArray = 0;
+    sym->is2DArray = 0;
+    sym->offset = symtab.currentScope->paramOffset;
+    
+    symtab.currentScope->paramOffset += 4;
     symtab.currentScope->count++;
-    return 1; // Success
+    
+    return sym->offset;
 }
 
-/* Print the entire symbol table stack for debugging */
+int getVarOffset(char* name) {
+    Symbol* sym = lookupSymbol(name);
+    return sym ? sym->offset : -9999;
+}
+
+int isVarDeclared(char* name) {
+    return lookupSymbol(name) != NULL;
+}
+
+Symbol* getSymbol(char* name) {
+    return lookupSymbol(name);
+}
+
+int addArray(char* name, int size) {
+    if (isInCurrentScope(name)) {
+        return -1;
+    }
+    
+    Symbol* sym = &symtab.currentScope->vars[symtab.currentScope->count];
+    sym->name = strdup(name);
+    sym->isFunction = 0;
+    sym->isParameter = 0;
+    sym->isArray = 1;
+    sym->is2DArray = 0;
+    sym->arraySize = size;
+    sym->offset = symtab.currentScope->nextOffset;
+    
+    symtab.currentScope->nextOffset -= size * 4;
+    symtab.currentScope->count++;
+    
+    return sym->offset;
+}
+
+int addArray2D(char* name, int rows, int cols) {
+    if (isInCurrentScope(name)) {
+        return -1;
+    }
+    
+    Symbol* sym = &symtab.currentScope->vars[symtab.currentScope->count];
+    sym->name = strdup(name);
+    sym->isFunction = 0;
+    sym->isParameter = 0;
+    sym->isArray = 1;
+    sym->is2DArray = 1;
+    sym->rows = rows;
+    sym->cols = cols;
+    sym->arraySize = rows * cols;
+    sym->offset = symtab.currentScope->nextOffset;
+    
+    symtab.currentScope->nextOffset -= rows * cols * 4;
+    symtab.currentScope->count++;
+    
+    return sym->offset;
+}
+
 void printSymTab() {
-    printf("\n--- SYMBOL TABLE (SCOPED) ---\n");
+    printf("\n=== SYMBOL TABLE STATE ===\n");
     Scope* scope = symtab.currentScope;
     int level = 0;
-    while(scope != NULL) {
-        if (scope == symtab.globalScope) {
-            printf("--- GLOBAL SCOPE ---\n");
-        } else {
-            printf("--- LOCAL SCOPE (Level %d) ---\n", level);
-        }
-        
+    
+    while (scope != NULL) {
+        printf("Scope Level %d: Count=%d, NextOffset=%d\n", level, scope->count, scope->nextOffset);
         if (scope->count == 0) {
-            printf("(empty)\n");
+            printf("  (empty)\n");
         } else {
-             for (int i = 0; i < scope->count; i++) {
-                Symbol* s = &scope->symbols[i];
-                if (s->isFunction) {
-                    printf("  FUNC: %s, returns %s, params: %d\n", s->name, s->type, s->paramCount);
+            printf("  Variables:\n");
+            for (int i = 0; i < scope->count; i++) {
+                if (scope->vars[i].isFunction) {
+                    printf("    [%d] FUNCTION %s -> returns %s, %d params\n", 
+                           i, scope->vars[i].name, scope->vars[i].returnType, scope->vars[i].paramCount);
+                } else if (scope->vars[i].is2DArray) {
+                    printf("    [%d] %s[%d][%d] -> offset %d\n", 
+                           i, scope->vars[i].name, scope->vars[i].rows, scope->vars[i].cols, scope->vars[i].offset);
+                } else if (scope->vars[i].isArray) {
+                    printf("    [%d] %s[%d] -> offset %d\n", 
+                           i, scope->vars[i].name, scope->vars[i].arraySize, scope->vars[i].offset);
                 } else {
-                    printf("  VAR: %s, type %s, offset %d\n", s->name, s->type, s->offset);
+                    printf("    [%d] %s -> offset %d%s\n", 
+                           i, scope->vars[i].name, scope->vars[i].offset,
+                           scope->vars[i].isParameter ? " (parameter)" : "");
                 }
             }
         }
         scope = scope->parent;
         level++;
     }
-    printf("---------------------------\n\n");
+    printf("==========================\n\n");
 }

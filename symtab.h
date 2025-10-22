@@ -1,59 +1,60 @@
 #ifndef SYMTAB_H
 #define SYMTAB_H
 
-/* SYMBOL TABLE (Hierarchical)
- * This symbol table implements a stack of scopes to handle nested
- * variable and function declarations, crucial for a language with functions.
- */
+#define MAX_VARS 100
+#define MAX_PARAMS 10
 
-#define MAX_SYMBOLS_PER_SCOPE 100
-
-// Enhanced symbol entry
+/* Symbol entry */
 typedef struct {
     char* name;
-    char* type;      // Variable type ("int") or function return type
-    int offset;      // Stack offset (for local variables and parameters)
-    int isFunction;  // 1 if this is a function, 0 if variable
-    
-    // -- Function-specific data --
-    int paramCount;  // Number of parameters
-    char** paramTypes; // Array of parameter types (e.g., {"int", "int"})
+    int offset;
+    int isArray;
+    int arraySize;
+    int is2DArray;
+    int rows;
+    int cols;
+    int isFunction;
+    int isParameter;
+    char* returnType;
+    int paramCount;
 } Symbol;
 
-// Scope structure
+/* Forward declaration */
+struct Scope;
+
+/* Scope structure for nested scopes */
 typedef struct Scope {
-    Symbol symbols[MAX_SYMBOLS_PER_SCOPE];
+    Symbol vars[MAX_VARS];
     int count;
     int nextOffset;
-    struct Scope* parent;  // Link to the enclosing (parent) scope
+    int paramOffset;
+    struct Scope* parent;
 } Scope;
 
-// Symbol table with a scope stack
+/* Symbol table with scope management */
 typedef struct {
-    Scope* currentScope;   // Top of the scope stack (the current scope)
-    Scope* globalScope;    // Always points to the global scope
+    Scope* currentScope;
+    Scope* globalScope;
 } SymbolTable;
 
+/* Global symbol table instance */
+extern SymbolTable symtab;
 
-/* --- SYMBOL TABLE OPERATIONS --- */
-
-// Initialization
+/* Basic operations */
 void initSymTab();
+int addVar(char* name);
+int addArray(char* name, int size);
+int addArray2D(char* name, int rows, int cols);
+int getVarOffset(char* name);
+int isVarDeclared(char* name);
+Symbol* getSymbol(char* name);
 
-// Scope Management
-void enterScope();              // Push a new scope onto the stack
-void exitScope();               // Pop the current scope from the stack
-
-// Symbol Lookup
-Symbol* lookupSymbol(char* name);  // Search from current scope outwards to global
-int isInCurrentScope(char* name);  // Check for a symbol ONLY in the current scope
-
-// Symbol Addition
-int addVar(char* name, char* type);
+/* Function and scope operations */
+void enterScope();
+void exitScope();
+int addFunction(char* name, char* returnType, int paramCount);
 int addParameter(char* name, char* type);
-int addFunction(char* name, char* returnType, char** paramTypes, int paramCount);
-
-// For debugging
-void printSymTab();
+Symbol* lookupSymbol(char* name);
+int isInCurrentScope(char* name);
 
 #endif

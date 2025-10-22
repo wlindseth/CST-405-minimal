@@ -1,53 +1,48 @@
 %{
-/* LEXICAL ANALYZER (SCANNER)
- * This is the first phase of compilation - breaking input into tokens
- * Flex generates a scanner from these rules that reads character by character
- */
 #include <stdio.h>
 #include <stdlib.h>
-#include "parser.tab.h"  /* Token definitions from Bison */
+#include <string.h>
+#include "ast.h"
+#include "parser.tab.h"
+
+void yyerror(const char* s);
 %}
 
-/* Flex options to suppress warnings for unused functions */
-%option nounput
-%option noinput
+%option yylineno
 
 %%
 
-"int"           { return INT; }
-"print"         { return PRINT; }
+[ \t\n]+              { /* Skip whitespace */ }
+"//".*                { /* Skip single-line comments */ }
 
-[a-zA-Z_][a-zA-Z0-9_]* { 
-    yylval.str = strdup(yytext);
-    return ID; 
-}
+"int"                 { return INT; }
+"print"               { return PRINT; }
+"return"              { return RETURN; }
+"void"                { return VOID; }
 
-[0-9]+          { 
-    yylval.num = atoi(yytext);
-    return NUM; 
-}
+[a-zA-Z_][a-zA-Z0-9_]* { yylval.string = strdup(yytext); return ID; }
+[0-9]+                { yylval.num = atoi(yytext); return NUM; }
 
-"+"             { return '+'; }
-"-"             { return '-'; }
-"="             { return '='; }
-";"             { return ';'; }
-"("             { return '('; }
-")"             { return ')'; }
-"["             { return '['; }
-"]"             { return ']'; }
-"return"        { return RETURN; }
-"void"          { return VOID; }
-"{"             { return '{'; }
-"}"             { return '}'; }
-","             { return ','; }
+"+"                   { return '+'; }
+"-"                   { return '-'; }
+"*"                   { return '*'; }
+"/"                   { return '/'; }
+"="                   { return '='; }
+";"                   { return ';'; }
+","                   { return ','; }
+"("                   { return '('; }
+")"                   { return ')'; }
+"{"                   { return '{'; }
+"}"                   { return '}'; }
+"["                   { return '['; }
+"]"                   { return ']'; }
 
-[ \t\n]         { }
-
-.               { printf("Lexical Error: Unknown character '%c'\n", *yytext); }
+.                     { 
+                        fprintf(stderr, "Lexical Error: Unknown character '%s'\n", yytext); 
+                      }
 
 %%
 
-/* Required by Flex - signals end of input */
 int yywrap() {
-    return 1;  /* 1 means no more input files */
+    return 1;
 }

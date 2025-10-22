@@ -57,7 +57,9 @@ extern int yydebug;
     NUM = 258,                     /* NUM  */
     ID = 259,                      /* ID  */
     INT = 260,                     /* INT  */
-    PRINT = 261                    /* PRINT  */
+    PRINT = 261,                   /* PRINT  */
+    RETURN = 262,                  /* RETURN  */
+    VOID = 263                     /* VOID  */
   };
   typedef enum yytokentype yytoken_kind_t;
 #endif
@@ -66,13 +68,13 @@ extern int yydebug;
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 union YYSTYPE
 {
-#line 25 "parser.y"
+#line 15 "parser.y"
 
-    int num;                /* For integer literals */
-    char* str;              /* For identifiers */
-    struct ASTNode* node;   /* For AST nodes */
+    int num;
+    char* string;
+    struct ASTNode* node;
 
-#line 76 "parser.tab.h"
+#line 78 "parser.tab.h"
 
 };
 typedef union YYSTYPE YYSTYPE;

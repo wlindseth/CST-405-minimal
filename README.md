@@ -298,4 +298,4 @@ This is an educational project. Suggestions for making concepts clearer are welc
 
 ## 📜 License
 
-Educational use - free to use and modify for teaching purposes.# CST-405-minimal
+Educational use - free to use and modify for teaching purposes.
